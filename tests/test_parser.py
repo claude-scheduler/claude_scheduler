@@ -144,6 +144,38 @@ class TestParseTaskArgs(unittest.TestCase):
         self.assertEqual(options["allow"], ["lookout:", "Bash"])
         self.assertEqual(remaining, ["Do", "stuff"])
 
+    def test_prompt_file_basic(self):
+        """--prompt-file parses correctly."""
+        options, remaining = parse_task_args(["--prompt-file", "/path/to/prompt.txt"])
+        self.assertEqual(options["prompt_file"], "/path/to/prompt.txt")
+        self.assertEqual(remaining, [])
+
+    def test_prompt_file_with_tilde(self):
+        """--prompt-file with ~ path."""
+        options, remaining = parse_task_args(["--prompt-file", "~/prompts/task.txt"])
+        self.assertEqual(options["prompt_file"], "~/prompts/task.txt")
+        self.assertEqual(remaining, [])
+
+    def test_prompt_file_with_other_options(self):
+        """--prompt-file combined with other options."""
+        options, remaining = parse_task_args([
+            "--mcps", "lookout",
+            "--cwd", "/project",
+            "--prompt-file", "/path/prompt.txt",
+            "--allow", "lookout:"
+        ])
+        self.assertEqual(options["mcps"], ["lookout"])
+        self.assertEqual(options["cwd"], "/project")
+        self.assertEqual(options["prompt_file"], "/path/prompt.txt")
+        self.assertEqual(options["allow"], ["lookout:"])
+        self.assertEqual(remaining, [])
+
+    def test_prompt_file_no_inline_prompt(self):
+        """--prompt-file means no inline prompt tokens needed."""
+        options, remaining = parse_task_args(["--mcps", "lookout", "--prompt-file", "~/p.txt"])
+        self.assertEqual(options["prompt_file"], "~/p.txt")
+        self.assertEqual(remaining, [])
+
 
 class TestClaudeTaskAllowedTools(unittest.TestCase):
     """Test the ClaudeTask.is_tool_allowed method."""
@@ -251,6 +283,68 @@ class TestClaudeTaskAllowedTools(unittest.TestCase):
         task = self.ClaudeTask("test")
         sdk_tools = task.get_sdk_allowed_tools()
         self.assertIsNone(sdk_tools)
+
+
+class TestRuntimeContext(unittest.TestCase):
+    """Test the runtime context injection."""
+
+    def setUp(self):
+        from claude_task import ClaudeTask
+        self.ClaudeTask = ClaudeTask
+
+    def test_context_contains_current_time(self):
+        """Context includes current time."""
+        task = self.ClaudeTask("test prompt")
+        context = task._build_runtime_context()
+        self.assertIn("[Context]", context)
+        self.assertIn("Current time:", context)
+
+    def test_context_contains_task_header(self):
+        """Context ends with [Task] header."""
+        task = self.ClaudeTask("test prompt")
+        context = task._build_runtime_context()
+        self.assertIn("[Task]", context)
+        self.assertTrue(context.strip().endswith("[Task]"))
+
+    def test_context_includes_cwd_when_set(self):
+        """Context includes working directory when cwd is set."""
+        task = self.ClaudeTask("test", cwd="/some/path")
+        context = task._build_runtime_context()
+        self.assertIn("Working directory: /some/path", context)
+
+    def test_context_excludes_cwd_when_not_set(self):
+        """Context omits working directory when cwd is not set."""
+        task = self.ClaudeTask("test")
+        context = task._build_runtime_context()
+        self.assertNotIn("Working directory:", context)
+
+    def test_context_includes_mcps_when_set(self):
+        """Context includes MCP names when mcp_servers is set."""
+        task = self.ClaudeTask("test", mcp_servers={"lookout": {}, "aidderall": {}})
+        context = task._build_runtime_context()
+        self.assertIn("Available MCPs:", context)
+        self.assertIn("lookout", context)
+        self.assertIn("aidderall", context)
+
+    def test_context_excludes_mcps_when_not_set(self):
+        """Context omits MCPs when mcp_servers is not set."""
+        task = self.ClaudeTask("test")
+        context = task._build_runtime_context()
+        self.assertNotIn("Available MCPs:", context)
+
+    def test_context_all_fields(self):
+        """Context includes all fields when all options set."""
+        task = self.ClaudeTask(
+            "test",
+            cwd="/tmp",
+            mcp_servers={"lookout": {"type": "sse"}}
+        )
+        context = task._build_runtime_context()
+        self.assertIn("[Context]", context)
+        self.assertIn("Current time:", context)
+        self.assertIn("Working directory: /tmp", context)
+        self.assertIn("Available MCPs: lookout", context)
+        self.assertIn("[Task]", context)
 
 
 if __name__ == "__main__":

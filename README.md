@@ -66,6 +66,7 @@ schedule <HH:MMAM/PM> [options] <prompt...>
 **Options:**
 - `--mcps name1,name2` - Load specified MCP servers
 - `--cwd /path` - Set working directory (inherits project context)
+- `--prompt-file /path` - Read prompt from file (for long prompts)
 - `--allow` - Pre-authorize all loaded MCPs for unattended execution
 - `--allow patterns` - Pre-authorize specific tools only
 
@@ -89,6 +90,9 @@ schedule <HH:MMAM/PM> [options] <prompt...>
 
 # Multiple MCPs, authorize only one
 > schedule 12:00PM --mcps lookout,aidderall --allow aidderall Summarize my tasks
+
+# Long prompt from file (bypasses shell line length limits)
+> schedule 9:00AM --mcps lookout --allow --prompt-file ~/prompts/morning_briefing.txt
 ```
 
 ### periodic
@@ -107,6 +111,9 @@ periodic <seconds> [options] <prompt...>
 
 # Every 5 minutes, check for urgent emails
 > periodic 300 --mcps lookout --allow lookout:read_inbox Check for urgent emails
+
+# Long prompt from file
+> periodic 900 --mcps lookout --allow --prompt-file ~/prompts/calendar_check.txt
 ```
 
 ### list

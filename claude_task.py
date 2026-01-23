@@ -179,6 +179,32 @@ class ClaudeTask(TaskSchedulerTask):
         )
         thread.start()
 
+    def _build_runtime_context(self) -> str:
+        """Build runtime context to prepend to the prompt."""
+        import time
+        from datetime import datetime
+
+        lines = ["[Context]"]
+
+        # Current date/time - human readable with day of week
+        now = datetime.now()
+        time_str = now.strftime("%A, %B %d, %Y, %I:%M %p")
+        lines.append(f"Current time: {time_str}")
+
+        # Working directory
+        if self.cwd:
+            lines.append(f"Working directory: {self.cwd}")
+
+        # Available MCP servers
+        if self.mcp_servers:
+            mcp_names = ", ".join(self.mcp_servers.keys())
+            lines.append(f"Available MCPs: {mcp_names}")
+
+        lines.append("")
+        lines.append("[Task]")
+
+        return "\n".join(lines)
+
     async def _run_agent(self):
         """Run the Claude agent with the configured prompt."""
         prompt_preview = self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt
@@ -212,7 +238,10 @@ class ClaudeTask(TaskSchedulerTask):
 
             options = ClaudeCodeOptions(**options_kwargs)
 
-            async for message in query(prompt=self.prompt, options=options):
+            # Prepend runtime context to prompt
+            full_prompt = self._build_runtime_context() + self.prompt
+
+            async for message in query(prompt=full_prompt, options=options):
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):

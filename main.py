@@ -29,7 +29,7 @@ SCHEDULE_STATE_FILE = "claude_schedule.pickle"
 
 def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
     """
-    Parse --mcps, --cwd, and --allow flags from command tokens.
+    Parse --mcps, --cwd, --allow, and --prompt-file flags from command tokens.
 
     Args:
         tokens: List of command tokens (after the command name and time/period)
@@ -40,6 +40,7 @@ def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
           - 'mcps': list of MCP names to load
           - 'cwd': working directory path
           - 'allow': True (all loaded MCPs) or list of patterns
+          - 'prompt_file': path to file containing the prompt
     """
     options = {}
     remaining = []
@@ -54,6 +55,9 @@ def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
             i += 2
         elif token == "--cwd" and i + 1 < len(tokens):
             options["cwd"] = tokens[i + 1]
+            i += 2
+        elif token == "--prompt-file" and i + 1 < len(tokens):
+            options["prompt_file"] = tokens[i + 1]
             i += 2
         elif token == "--allow":
             # Check if next token is a pattern list or start of prompt
@@ -184,13 +188,15 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Usage:
 
             schedule <HH:MMAM/PM> [options] <prompt...>
+            schedule <HH:MMAM/PM> [options] --prompt-file <path>
 
         Options:
 
             --mcps name1,name2     Load specified MCP servers
             --cwd /path            Set working directory
-            --allow            Pre-authorize all loaded MCPs (unattended)
-            --allow patterns   Pre-authorize specific tools
+            --prompt-file <path>   Read prompt from file (for long prompts)
+            --allow                Pre-authorize all loaded MCPs (unattended)
+            --allow patterns       Pre-authorize specific tools
 
         Patterns:
 
@@ -203,7 +209,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
 
             schedule 2:30PM --mcps lookout --allow Send dad joke to Alice
             schedule 9:00AM --mcps lookout --allow lookout:read_inbox Check mail
-            schedule 10:00AM --allow Edit,Write Update the config file
+            schedule 10:00AM --prompt-file ~/prompts/daily_report.txt
         """
         tokens = processor.get_tokenized_command_buffer()
 
@@ -218,11 +224,23 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
             # Parse options and prompt from remaining tokens
             options, prompt_tokens = parse_task_args(tokens[2:])
 
-            if not prompt_tokens:
-                self.print_error("No prompt provided")
+            # Get prompt from file or command line
+            if options.get("prompt_file"):
+                prompt_path = os.path.expanduser(options["prompt_file"])
+                try:
+                    with open(prompt_path, "r") as f:
+                        prompt = f.read().strip()
+                except FileNotFoundError:
+                    self.print_error(f"Prompt file not found: {prompt_path}")
+                    return
+                except Exception as e:
+                    self.print_error(f"Failed to read prompt file: {e}")
+                    return
+            elif prompt_tokens:
+                prompt = " ".join(prompt_tokens)
+            else:
+                self.print_error("No prompt provided (use inline text or --prompt-file)")
                 return
-
-            prompt = " ".join(prompt_tokens)
 
             # Resolve MCPs
             mcp_servers = self._resolve_mcps(
@@ -264,13 +282,15 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Usage:
 
             periodic <seconds> [options] <prompt...>
+            periodic <seconds> [options] --prompt-file <path>
 
         Options:
 
             --mcps name1,name2     Load specified MCP servers
             --cwd /path            Set working directory
-            --allow            Pre-authorize all loaded MCPs (unattended)
-            --allow patterns   Pre-authorize specific tools
+            --prompt-file <path>   Read prompt from file (for long prompts)
+            --allow                Pre-authorize all loaded MCPs (unattended)
+            --allow patterns       Pre-authorize specific tools
 
         Patterns:
 
@@ -281,7 +301,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Examples:
 
             periodic 3600 --mcps aidderall --allow Summarize my tasks
-            periodic 300 --mcps lookout --allow lookout:read_inbox Check for mail
+            periodic 300 --prompt-file ~/prompts/check_calendar.txt
         """
         tokens = processor.get_tokenized_command_buffer()
 
@@ -299,11 +319,23 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
             # Parse options and prompt from remaining tokens
             options, prompt_tokens = parse_task_args(tokens[2:])
 
-            if not prompt_tokens:
-                self.print_error("No prompt provided")
+            # Get prompt from file or command line
+            if options.get("prompt_file"):
+                prompt_path = os.path.expanduser(options["prompt_file"])
+                try:
+                    with open(prompt_path, "r") as f:
+                        prompt = f.read().strip()
+                except FileNotFoundError:
+                    self.print_error(f"Prompt file not found: {prompt_path}")
+                    return
+                except Exception as e:
+                    self.print_error(f"Failed to read prompt file: {e}")
+                    return
+            elif prompt_tokens:
+                prompt = " ".join(prompt_tokens)
+            else:
+                self.print_error("No prompt provided (use inline text or --prompt-file)")
                 return
-
-            prompt = " ".join(prompt_tokens)
 
             # Resolve MCPs
             mcp_servers = self._resolve_mcps(
