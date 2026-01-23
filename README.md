@@ -285,6 +285,12 @@ claude_scheduler/
     └── test_parser.py
 ```
 
+## Security Notes
+
+**Pickle files**: The schedule is persisted using Python's `pickle` module (`claude_schedule.pickle`). Pickle files can execute arbitrary code when loaded. **Never load pickle files from untrusted sources.** Only use pickle files you created yourself.
+
+If you need to share schedules between machines, use `save-prompt` to export prompts as plain text files, then recreate tasks on the target machine.
+
 ## License
 
-GPL-2.0
+MIT

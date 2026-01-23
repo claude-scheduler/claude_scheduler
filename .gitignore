@@ -21,3 +21,6 @@ ENV/
 
 # Meta/planning files
 meta/
+
+# Claude Code local config
+.claude/
