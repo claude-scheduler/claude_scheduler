@@ -1,5 +1,9 @@
 # Claude Scheduler
 
+<p align="center">
+  <img src="images/claude_scheduler.jpg" alt="Claude Scheduler" width="300">
+</p>
+
 Schedule Claude Code agents to run at specific times or periodically, with optional MCP server access and granular permission control.
 
 ## Overview
