@@ -22,7 +22,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install claude-code-sdk
+pip install -r requirements.txt
 ```
 
 ## Quick Start
@@ -49,7 +49,10 @@ python3 main.py
 | `periodic` | Schedule a recurring task |
 | `list` | Show all scheduled tasks |
 | `unschedule` | Remove a task by index |
+| `save-prompt` | Save a task's prompt to a file |
 | `mcps` | List available MCP servers |
+| `save` | Save schedule to disk |
+| `reload` | Reload schedule from disk |
 | `help` | Show help (use `help <command>` for details) |
 | `exit` | Save state and exit |
 
@@ -135,6 +138,20 @@ Remove a task by its index.
 ```
 > unschedule 0
 Removed task 0
+```
+
+### save-prompt
+
+Save a task's prompt to a file. Useful for editing or recreating schedule entries.
+
+```bash
+# Save task 0's prompt to a file
+> save-prompt 0 ~/prompts/morning_briefing.txt
+Saved prompt to /Users/you/prompts/morning_briefing.txt (847 chars)
+
+# Edit the file, then recreate the task
+> unschedule 0
+> schedule 9:00AM --mcps lookout --allow --prompt-file ~/prompts/morning_briefing.txt
 ```
 
 ### mcps

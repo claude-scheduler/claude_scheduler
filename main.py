@@ -112,6 +112,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         self.add_command("periodic", self.cmd_periodic)
         self.add_command("list", self.cmd_list)
         self.add_command("unschedule", self.cmd_unschedule)
+        self.add_command("save-prompt", self.cmd_save_prompt)
         self.add_command("save", self.cmd_save)
         self.add_command("reload", self.cmd_reload)
         self.add_command("mcps", self.cmd_mcps)
@@ -411,6 +412,49 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         except Exception as e:
             self.print_error(f"Failed to remove task: {e}")
 
+    def cmd_save_prompt(self, processor):
+        """
+        Save a task's prompt to a file.
+
+        Usage:
+
+            save-prompt <index> <filepath>
+
+        Examples:
+
+            save-prompt 0 ~/prompts/morning_briefing.txt
+            save-prompt 1 /tmp/calendar_check.txt
+
+        Use 'list' to see task indices.
+        """
+        tokens = processor.get_tokenized_command_buffer()
+
+        if len(tokens) < 3:
+            self.print_error("Usage: save-prompt <index> <filepath>")
+            return
+
+        try:
+            index = int(tokens[1])
+            filepath = os.path.expanduser(tokens[2])
+
+            tasks = get_schedule()
+            if not (0 <= index < len(tasks)):
+                self.print_error(f"Invalid task index: {index}")
+                return
+
+            task = tasks[index]
+            prompt = task.prompt
+
+            with open(filepath, "w") as f:
+                f.write(prompt)
+
+            self.print_msg(f"Saved prompt to {filepath} ({len(prompt)} chars)")
+
+        except ValueError:
+            self.print_error("Index must be an integer")
+        except Exception as e:
+            self.print_error(f"Failed to save prompt: {e}")
+
     def cmd_save(self, processor):
         """
         Save the current schedule to disk.
@@ -541,7 +585,7 @@ def main():
     scheduler.start()
     print("Task scheduler running.")
     print()
-    print("Commands: schedule, periodic, list, unschedule, save, reload, mcps, help, exit")
+    print("Commands: schedule, periodic, list, unschedule, save-prompt, save, reload, mcps, help, exit")
     print("Options:  --mcps name1,name2  --cwd /path  --allow [patterns]")
     print()
 
