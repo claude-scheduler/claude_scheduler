@@ -289,6 +289,87 @@ claude_scheduler/
     └── test_parser.py
 ```
 
+### Block Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            CLAUDE SCHEDULER                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐         ┌─────────────────────────────────────────────┐   │
+│  │   User CLI   │         │              main.py                        │   │
+│  │              │────────▶│   ClaudeSchedulerCommandProcessor           │   │
+│  │  > schedule  │         │                                             │   │
+│  │  > periodic  │         │   Commands:                                 │   │
+│  │  > list      │         │   • parse_task_args()                       │   │
+│  │  > unschedule│         │   • schedule / periodic                     │   │
+│  │  > mcps      │         │   • save / reload                           │   │
+│  └──────────────┘         └──────────────┬──────────────────────────────┘   │
+│                                          │                                  │
+│                                          │ creates                          │
+│                                          ▼                                  │
+│  ┌───────────────────┐           ┌───────────────────┐                      │
+│  │  mcp_registry.py  │           │   claude_task.py  │                      │
+│  │                   │◀──────────│                   │                      │
+│  │  MCPRegistry      │  lookups  │   ClaudeTask      │                      │
+│  │  • ~/.claude.json │           │   • prompt        │                      │
+│  │  • get()          │           │   • mcps[]        │                      │
+│  │  • list_servers() │           │   • allowed_tools │                      │
+│  └───────────────────┘           │   • cwd           │                      │
+│                                  └─────────┬─────────┘                      │
+│                                            │                                │
+│                                            │ added to                       │
+│                                            ▼                                │
+│                                  ┌───────────────────┐                      │
+│  ┌────────────────────┐          │   scheduler.py    │                      │
+│  │ claude_schedule    │◀────────▶│                   │                      │
+│  │    .pickle         │  save/   │   TaskScheduler   │                      │
+│  │                    │  load    │   (Thread)        │                      │
+│  │ Persisted tasks    │          │                   │                      │
+│  └────────────────────┘          │   polls every 1s  │                      │
+│                                  │   ┌───────────┐   │                      │
+│                                  │   │ task_list │   │                      │
+│                                  │   └─────┬─────┘   │                      │
+│                                  └─────────┼─────────┘                      │
+│                                            │                                │
+│                                            │ when due: execute()            │
+│                                            ▼                                │
+│                                  ┌───────────────────┐                      │
+│                                  │  Background Thread│                      │
+│                                  │                   │                      │
+│                                  │  _run_agent()     │                      │
+│                                  │       │           │                      │
+│                                  └───────┼───────────┘                      │
+│                                          │                                  │
+└──────────────────────────────────────────┼──────────────────────────────────┘
+                                           │
+                                           ▼
+                               ┌───────────────────────┐
+                               │   claude_code_sdk     │
+                               │                       │
+                               │   query(              │
+                               │     prompt,           │
+                               │     allowed_tools,    │
+                               │     mcps              │
+                               │   )                   │
+                               └───────────┬───────────┘
+                                           │
+                        ┌──────────────────┼──────────────────┐
+                        ▼                  ▼                  ▼
+                 ┌────────────┐    ┌────────────┐    ┌────────────┐
+                 │ MCP: mail  │    │ MCP: tasks │    │ Bash/Edit  │
+                 │  (lookout) │    │ (aidderall)│    │   /Write   │
+                 └────────────┘    └────────────┘    └────────────┘
+```
+
+**Flow:**
+1. User enters command → `parse_task_args()` extracts options
+2. `ClaudeTask` created with prompt, MCPs, allowed tools
+3. Task added to `TaskScheduler` thread's list
+4. Scheduler polls every second, checks `should_activate()`
+5. When due → spawns async thread → calls `claude_code_sdk.query()`
+6. Agent runs with configured MCPs and tool permissions
+
 ## Security Notes
 
 **Pickle files**: The schedule is persisted using Python's `pickle` module (`claude_schedule.pickle`). Pickle files can execute arbitrary code when loaded. **Never load pickle files from untrusted sources.** Only use pickle files you created yourself.
