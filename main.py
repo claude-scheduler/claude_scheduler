@@ -111,6 +111,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         self.add_command("schedule", self.cmd_schedule)
         self.add_command("periodic", self.cmd_periodic)
         self.add_command("list", self.cmd_list)
+        self.add_command("run", self.cmd_run)
         self.add_command("unschedule", self.cmd_unschedule)
         self.add_command("save-prompt", self.cmd_save_prompt)
         self.add_command("save", self.cmd_save)
@@ -389,6 +390,44 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         for i, task in enumerate(tasks):
             print(f"  {i}> {task}")
 
+    def cmd_run(self, processor):
+        """
+        Run a scheduled task immediately, regardless of its timing.
+
+        Usage:
+
+            run <index>
+
+        Examples:
+
+            run 0      Run the first task in the schedule
+            run 2      Run the third task
+
+        Use 'list' to see task indices.
+        """
+        tokens = processor.get_tokenized_command_buffer()
+
+        if len(tokens) < 2:
+            self.print_error("Usage: run <index>")
+            return
+
+        try:
+            index = int(tokens[1])
+            tasks = get_schedule()
+
+            if not (0 <= index < len(tasks)):
+                self.print_error(f"Invalid task index: {index}")
+                return
+
+            task = tasks[index]
+            self.print_msg(f"Running task {index}: {task}")
+            task.execute()
+
+        except ValueError:
+            self.print_error("Index must be an integer")
+        except Exception as e:
+            self.print_error(f"Failed to run task: {e}")
+
     def cmd_unschedule(self, processor):
         """
         Remove a scheduled task by index.
@@ -585,7 +624,7 @@ def main():
     scheduler.start()
     print("Task scheduler running.")
     print()
-    print("Commands: schedule, periodic, list, unschedule, save-prompt, save, reload, mcps, help, exit")
+    print("Commands: schedule, periodic, list, run, unschedule, save-prompt, save, reload, mcps, help, exit")
     print("Options:  --mcps name1,name2  --cwd /path  --allow [patterns]")
     print()
 

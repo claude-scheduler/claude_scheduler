@@ -11,11 +11,11 @@ from typing import Dict, Any, Optional, List
 from scheduler import TaskSchedulerTask
 
 try:
-    from claude_code_sdk import query, ClaudeCodeOptions, AssistantMessage, TextBlock, ResultMessage
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock, ResultMessage
     CLAUDE_SDK_AVAILABLE = True
 except ImportError:
     CLAUDE_SDK_AVAILABLE = False
-    print("Warning: claude-code-sdk not installed. ClaudeTask will not function.")
+    print("Warning: claude-agent-sdk not installed. ClaudeTask will not function.")
 
 
 class ClaudeTask(TaskSchedulerTask):
@@ -236,7 +236,7 @@ class ClaudeTask(TaskSchedulerTask):
             if self.cwd:
                 options_kwargs["cwd"] = self.cwd
 
-            options = ClaudeCodeOptions(**options_kwargs)
+            options = ClaudeAgentOptions(**options_kwargs)
 
             # Prepend runtime context to prompt
             full_prompt = self._build_runtime_context() + self.prompt
