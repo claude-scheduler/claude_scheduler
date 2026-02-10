@@ -31,7 +31,8 @@ class ClaudeTask(TaskSchedulerTask):
         period: int = 60,
         mcp_servers: Optional[Dict[str, Dict[str, Any]]] = None,
         cwd: Optional[str] = None,
-        allowed_tools: Optional[List[str]] = None
+        allowed_tools: Optional[List[str]] = None,
+        model: Optional[str] = None
     ):
         """
         Initialize a Claude task.
@@ -51,6 +52,7 @@ class ClaudeTask(TaskSchedulerTask):
                   - "lookout:mail_*" - MCP tool wildcard
                   - "Bash" - allow bash commands
                   - "Edit", "Write", "Read" - file operations
+            model: Model override for this task (None = use global default)
         """
         super().__init__(schedule_time=schedule_time)
         self.prompt = prompt
@@ -61,6 +63,7 @@ class ClaudeTask(TaskSchedulerTask):
         self.mcp_servers = mcp_servers or {}
         self.cwd = cwd
         self.allowed_tools = allowed_tools or []
+        self.model = model
 
     def __repr__(self):
         prompt_preview = self.prompt[:40] + "..." if len(self.prompt) > 40 else self.prompt
@@ -78,6 +81,8 @@ class ClaudeTask(TaskSchedulerTask):
                 suffix_parts.append("allow=[all MCPs]")
             else:
                 suffix_parts.append(f"allow=[{', '.join(self.allowed_tools)}]")
+        if getattr(self, 'model', None):
+            suffix_parts.append(f"model={self.model}")
 
         suffix = f" ({', '.join(suffix_parts)})" if suffix_parts else ""
 
@@ -207,6 +212,8 @@ class ClaudeTask(TaskSchedulerTask):
 
     async def _run_agent(self):
         """Run the Claude agent with the configured prompt."""
+        from config import get_config
+
         prompt_preview = self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt
         print(f"[ClaudeTask] Starting: {prompt_preview}")
 
@@ -223,6 +230,31 @@ class ClaudeTask(TaskSchedulerTask):
         try:
             # Build options
             options_kwargs = {}
+            config = get_config()
+
+            # Resolve model: per-task override → global default → SDK default
+            effective_model = getattr(self, 'model', None) or config.get("model")
+            if effective_model:
+                options_kwargs["model"] = effective_model
+                print(f"[ClaudeTask] Model: {effective_model}")
+
+            # Resolve fallback model from config
+            fallback_model = config.get("fallback_model")
+            if fallback_model:
+                options_kwargs["fallback_model"] = fallback_model
+
+            # Resolve other config defaults
+            max_turns = config.get("max_turns")
+            if max_turns:
+                options_kwargs["max_turns"] = max_turns
+
+            max_budget = config.get("max_budget_usd")
+            if max_budget:
+                options_kwargs["max_budget_usd"] = max_budget
+
+            permission_mode = config.get("permission_mode")
+            if permission_mode:
+                options_kwargs["permission_mode"] = permission_mode
 
             # Set allowed_tools for granular permissions
             sdk_allowed = self.get_sdk_allowed_tools()

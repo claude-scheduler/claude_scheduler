@@ -22,6 +22,7 @@ from scheduler import (
     stop_scheduler,
 )
 from claude_task import ClaudeTask
+from config import get_config, SchedulerConfig, CONFIG_SCHEMA
 from mcp_registry import get_registry, MCPRegistry
 
 SCHEDULE_STATE_FILE = "claude_schedule.pickle"
@@ -29,7 +30,7 @@ SCHEDULE_STATE_FILE = "claude_schedule.pickle"
 
 def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
     """
-    Parse --mcps, --cwd, --allow, and --prompt-file flags from command tokens.
+    Parse --mcps, --cwd, --allow, --model, and --prompt-file flags from command tokens.
 
     Args:
         tokens: List of command tokens (after the command name and time/period)
@@ -41,6 +42,7 @@ def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
           - 'cwd': working directory path
           - 'allow': True (all loaded MCPs) or list of patterns
           - 'prompt_file': path to file containing the prompt
+          - 'model': model name/id override for this task
     """
     options = {}
     remaining = []
@@ -52,6 +54,9 @@ def parse_task_args(tokens: List[str]) -> Tuple[Dict[str, Any], List[str]]:
         if token == "--mcps" and i + 1 < len(tokens):
             # Parse comma-separated MCP names
             options["mcps"] = [name.strip() for name in tokens[i + 1].split(",")]
+            i += 2
+        elif token == "--model" and i + 1 < len(tokens):
+            options["model"] = tokens[i + 1]
             i += 2
         elif token == "--cwd" and i + 1 < len(tokens):
             options["cwd"] = tokens[i + 1]
@@ -113,6 +118,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         self.add_command("list", self.cmd_list)
         self.add_command("run", self.cmd_run)
         self.add_command("unschedule", self.cmd_unschedule)
+        self.add_command("config", self.cmd_config)
         self.add_command("save-prompt", self.cmd_save_prompt)
         self.add_command("save", self.cmd_save)
         self.add_command("reload", self.cmd_reload)
@@ -195,6 +201,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Options:
 
             --mcps name1,name2     Load specified MCP servers
+            --model <name>         Model override (e.g. sonnet, opus, claude-sonnet-4-5)
             --cwd /path            Set working directory
             --prompt-file <path>   Read prompt from file (for long prompts)
             --allow                Pre-authorize all loaded MCPs (unattended)
@@ -210,6 +217,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Examples:
 
             schedule 2:30PM --mcps lookout --allow Send dad joke to Alice
+            schedule 2:30PM --model sonnet Send a haiku
             schedule 9:00AM --mcps lookout --allow lookout:read_inbox Check mail
             schedule 10:00AM --prompt-file ~/prompts/daily_report.txt
         """
@@ -261,11 +269,14 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
                 schedule_time=schedule_time,
                 mcp_servers=mcp_servers if mcp_servers else None,
                 cwd=options.get("cwd"),
-                allowed_tools=allowed_tools
+                allowed_tools=allowed_tools,
+                model=options.get("model")
             )
             add_task(task)
 
             msg = f'Scheduled: "{prompt}" at {schedule_time}'
+            if options.get("model"):
+                msg += f'\n  Model: {options["model"]}'
             if mcp_servers:
                 msg += f'\n  MCPs: {", ".join(mcp_servers.keys())}'
             if allowed_tools:
@@ -289,6 +300,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Options:
 
             --mcps name1,name2     Load specified MCP servers
+            --model <name>         Model override (e.g. sonnet, opus, claude-sonnet-4-5)
             --cwd /path            Set working directory
             --prompt-file <path>   Read prompt from file (for long prompts)
             --allow                Pre-authorize all loaded MCPs (unattended)
@@ -303,6 +315,7 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
         Examples:
 
             periodic 3600 --mcps aidderall --allow Summarize my tasks
+            periodic 3600 --model haiku Check system health
             periodic 300 --prompt-file ~/prompts/check_calendar.txt
         """
         tokens = processor.get_tokenized_command_buffer()
@@ -357,11 +370,14 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
                 period=period,
                 mcp_servers=mcp_servers if mcp_servers else None,
                 cwd=options.get("cwd"),
-                allowed_tools=allowed_tools
+                allowed_tools=allowed_tools,
+                model=options.get("model")
             )
             add_task(task)
 
             msg = f'Scheduled: "{prompt}" every {period} seconds'
+            if options.get("model"):
+                msg += f'\n  Model: {options["model"]}'
             if mcp_servers:
                 msg += f'\n  MCPs: {", ".join(mcp_servers.keys())}'
             if allowed_tools:
@@ -377,15 +393,61 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
 
     def cmd_list(self, processor):
         """
-        List all scheduled tasks.
-        Usage: list
+        List scheduled tasks, or show details for a specific task.
+
+        Usage:
+
+            list           List all tasks (summary view)
+            list <index>   Show full details for a specific task
+
+        Examples:
+
+            list           Show all scheduled tasks
+            list 0         Show full details for task 0
         """
+        tokens = processor.get_tokenized_command_buffer()
         tasks = get_schedule()
 
         if not tasks:
             self.print_msg("No tasks scheduled.")
             return
 
+        # If index provided, show full details for that task
+        if len(tokens) > 1:
+            try:
+                index = int(tokens[1])
+                if not (0 <= index < len(tasks)):
+                    self.print_error(f"Invalid task index: {index}")
+                    return
+
+                task = tasks[index]
+                config = get_config()
+                self.print_msg(f"Task {index} details:")
+                print(f"  Schedule: {'every ' + str(task.period) + 's' if task.is_periodic() else 'at ' + __import__('time').strftime('%I:%M%p', task.time)}")
+                # Show model: per-task override, or global default, or SDK default
+                task_model = getattr(task, 'model', None)
+                if task_model:
+                    print(f"  Model: {task_model}")
+                elif config.get("model"):
+                    print(f"  Model: {config.get('model')} (from config)")
+                if task.cwd:
+                    print(f"  Working dir: {task.cwd}")
+                if task.mcp_servers:
+                    print(f"  MCPs: {', '.join(task.mcp_servers.keys())}")
+                if task.allowed_tools:
+                    print(f"  Allowed tools: {', '.join(task.allowed_tools)}")
+                print(f"\n  Prompt:\n  {'-' * 40}")
+                # Print prompt with indentation
+                for line in task.prompt.split('\n'):
+                    print(f"  {line}")
+                print(f"  {'-' * 40}")
+                return
+
+            except ValueError:
+                self.print_error("Index must be an integer")
+                return
+
+        # Default: list all tasks
         self.print_msg("Scheduled tasks:")
         for i, task in enumerate(tasks):
             print(f"  {i}> {task}")
@@ -450,6 +512,91 @@ class ClaudeSchedulerCommandProcessor(CommandLineProcessor):
             self.print_error("Index must be an integer")
         except Exception as e:
             self.print_error(f"Failed to remove task: {e}")
+
+    def cmd_config(self, processor):
+        """
+        View or change scheduler settings.
+
+        Usage:
+
+            config                        Show all settings
+            config <key>                  Show one setting
+            config <key> <value>          Set a setting
+            config <key> --clear          Clear a setting (revert to SDK default)
+
+        Settings:
+
+            model              Default Claude model (e.g. sonnet, claude-sonnet-4-5)
+            fallback_model     Fallback model if primary fails
+            permission_mode    Permission mode (default, acceptEdits, bypassPermissions)
+            max_turns          Maximum conversation turns per task
+            max_budget_usd     Maximum budget in USD per task
+
+        Examples:
+
+            config model sonnet
+            config max_budget_usd 0.50
+            config model --clear
+        """
+        tokens = processor.get_tokenized_command_buffer()
+        config = get_config()
+
+        # config — show all settings
+        if len(tokens) == 1:
+            settings = config.all()
+            if not settings:
+                self.print_msg("No settings configured. Using SDK defaults.")
+                print(f"\n  Available settings:")
+                for key, (typ, desc) in sorted(CONFIG_SCHEMA.items()):
+                    print(f"    {key:20} {desc}")
+            else:
+                self.print_msg("Current settings:")
+                for key, value in sorted(settings.items()):
+                    print(f"  {key:20} = {value}")
+
+                # Show unset keys
+                unset = [k for k in CONFIG_SCHEMA if k not in settings]
+                if unset:
+                    print(f"\n  Unset (using SDK defaults): {', '.join(sorted(unset))}")
+            return
+
+        key = tokens[1]
+
+        # config <key> — show one setting
+        if len(tokens) == 2:
+            if key not in CONFIG_SCHEMA:
+                valid = ", ".join(sorted(CONFIG_SCHEMA.keys()))
+                self.print_error(f"Unknown setting: {key}. Valid: {valid}")
+                return
+
+            value = config.get(key)
+            _, desc = CONFIG_SCHEMA[key]
+            if value is not None:
+                self.print_msg(f"{key} = {value}")
+            else:
+                self.print_msg(f"{key} is not set (SDK default)")
+            print(f"  {desc}")
+            return
+
+        value = tokens[2]
+
+        # config <key> --clear
+        if value == "--clear":
+            try:
+                config.clear(key)
+                self.print_msg(f"Cleared: {key}")
+            except KeyError as e:
+                self.print_error(str(e))
+            return
+
+        # config <key> <value>
+        try:
+            config.set(key, value)
+            self.print_msg(f"Set: {key} = {config.get(key)}")
+        except KeyError as e:
+            self.print_error(str(e))
+        except ValueError as e:
+            self.print_error(str(e))
 
     def cmd_save_prompt(self, processor):
         """
@@ -615,6 +762,12 @@ def main():
     # Load MCP registry from Claude config
     registry = get_registry()
 
+    # Load config
+    config = get_config()
+    default_model = config.get("model")
+    if default_model:
+        print(f"Default model: {default_model}")
+
     # Load saved schedule
     load_schedule()
 
@@ -624,8 +777,8 @@ def main():
     scheduler.start()
     print("Task scheduler running.")
     print()
-    print("Commands: schedule, periodic, list, run, unschedule, save-prompt, save, reload, mcps, help, exit")
-    print("Options:  --mcps name1,name2  --cwd /path  --allow [patterns]")
+    print("Commands: schedule, periodic, list, run, unschedule, config, save-prompt, save, reload, mcps, help, exit")
+    print("Options:  --mcps name1,name2  --model <name>  --cwd /path  --allow [patterns]")
     print()
 
     # Start the command processor
